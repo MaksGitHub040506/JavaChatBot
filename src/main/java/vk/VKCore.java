@@ -15,7 +15,7 @@ public class VKCore {
     public VkApiClient vk;
     public GroupActor actor;
     private static int ts; // Временная метка
-    private static int maxMsgId = -1;
+    private static int maxMsgId = -1; //Лимит id сообщений для GetLongPollHistoryResponse.getMessages().getItems()
 
     private static final String ACCESS_TOKEN = "" /*КЛЮЧ ДОСТУПА*/;
     private static final int GROUP_ID = 0 /*ID ГРУППЫ*/;
@@ -24,15 +24,18 @@ public class VKCore {
         TransportClient transportClient = HttpTransportClient.getInstance();
         vk = new VkApiClient(transportClient);
         actor = new GroupActor(GROUP_ID, ACCESS_TOKEN);
-        ts = vk.messages().getLongPollServer(actor).execute().getTs();
+        ts = getTs();
     }
 
     public Message getMessage() throws ClientException, ApiException {
+        //https://github.com/VKCOM/vk-java-sdk/blob/master/sdk/src/main/java/com/vk/api/sdk/queries/messages/MessagesGetLongPollHistoryQuery.java
+        //Создает запрос для метода Messages.getLongPollHistory (https://vk.com/dev/messages.getLongPollHistory)
         MessagesGetLongPollHistoryQuery eventsQuery = vk.messages()
                 .getLongPollHistory(actor)
                 .ts(ts);
-
         if (maxMsgId > 0){
+            //Если значение maxMsgId было установлено (Больше изначального -1)
+            //Установить лимит id сообщений для GetLongPollHistoryResponse.getMessages().getItems()
             eventsQuery.maxMsgId(maxMsgId);
         }
         List<Message> messages = eventsQuery
@@ -42,21 +45,15 @@ public class VKCore {
 
         if (!messages.isEmpty()){
             try {
-                ts =  vk.messages()
-                        .getLongPollServer(actor)
-                        .execute()
-                        .getTs();
+                ts = getTs();
             } catch (ClientException e) {
                 e.printStackTrace();
             }
         }
+
+        //isOut() возвращает true, если сообщение исходит от бота
         if (!messages.isEmpty() && !messages.get(0).isOut()) {
 
-            /*
-            messageId - максимально полученный ID, нужен, чтобы не было ошибки 10 internal server error,
-            который является ограничением в API VK. В случае, если ts слишком старый (больше суток),
-            а max_msg_id не передан, метод может вернуть ошибку 10 (Internal server error).
-            */
             int messageId = messages.get(0).getId();
             if (messageId > maxMsgId){
                 maxMsgId = messageId;
@@ -65,6 +62,13 @@ public class VKCore {
             return messages.get(0);
         }
         return null;
+    }
+
+    private int getTs() throws ClientException, ApiException {
+        return vk.messages()
+                .getLongPollServer(actor) //создает запрос для метода Messages.getLongPollServer
+                .execute() //возвращает LongpollParams
+                .getTs(); //возвращает номер последнего события, начиная с которого нужно получать данные
     }
 
 }
